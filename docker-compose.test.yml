@@ -1,0 +1,30 @@
+# Ephemeral, isolated infrastructure for the automated integration test
+# suite (`npm run test:e2e`). Runs on different ports than docker-compose.yml
+# so it never collides with a locally running dev stack, and is always torn
+# down (including its volume) after the run.
+services:
+  postgres-test:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: linksphere_test
+      POSTGRES_PASSWORD: linksphere_test_pw
+      POSTGRES_DB: linksphere_test
+    ports:
+      - '5433:5432'
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U linksphere_test -d linksphere_test']
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+  redis-test:
+    image: redis:7-alpine
+    ports:
+      - '6380:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 3s
+      timeout: 5s
+      retries: 20

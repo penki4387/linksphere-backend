@@ -1,0 +1,100 @@
+// Prisma schema for the Linksphere backend assessment.
+// Models cover: users/balances, idempotent payment ledger, streams, and media moderation tasks.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SubscriptionTier {
+  FREE
+  BASIC
+  PRO
+}
+
+enum TransactionType {
+  CREDIT
+  DEBIT
+}
+
+enum MediaTaskStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED_MODERATION
+}
+
+model User {
+  id               String           @id @default(uuid())
+  email            String           @unique
+  balanceCents     Int              @default(0)
+  subscriptionTier SubscriptionTier @default(FREE)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  transactions Transaction[]
+  mediaTasks   MediaTask[]
+
+  @@map("users")
+}
+
+/// One row per successfully processed webhook event. The unique constraint on
+/// `eventId` is the source-of-truth idempotency guard: a concurrent replay
+/// that loses the Redis lock race still cannot double-insert past this.
+model ProcessedWebhook {
+  id           String   @id @default(uuid())
+  eventId      String   @unique
+  provider     String
+  payloadHash  String
+  createdAt    DateTime @default(now())
+
+  @@map("processed_webhooks")
+}
+
+model Transaction {
+  id          String          @id @default(uuid())
+  userId      String
+  user        User            @relation(fields: [userId], references: [id])
+  amountCents Int
+  type        TransactionType
+  eventId     String          @unique
+  provider    String
+  createdAt   DateTime        @default(now())
+
+  @@index([userId])
+  @@map("transactions")
+}
+
+model Stream {
+  id           String   @id @default(uuid())
+  title        String
+  isActive     Boolean  @default(true)
+  viewerCount  Int      @default(0)
+  requiredTier SubscriptionTier @default(FREE)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([isActive])
+  @@map("streams")
+}
+
+model MediaTask {
+  id         String          @id @default(uuid())
+  taskId     String          @unique
+  userId     String
+  user       User            @relation(fields: [userId], references: [id])
+  videoUrl   String
+  status     MediaTaskStatus @default(PENDING)
+  attempts   Int             @default(0)
+  failReason String?
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@map("media_tasks")
+}

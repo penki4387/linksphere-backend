@@ -1,0 +1,160 @@
+{
+  "info": {
+    "name": "Linksphere Backend Assessment",
+    "description": "Idempotent payments webhook, authenticated + rate-limited streams, and async media moderation pipeline.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "webhookSecret", "value": "REPLACE_WITH_YOUR_WEBHOOK_SIGNING_SECRET" },
+    { "key": "freeUserId", "value": "11111111-1111-4111-8111-111111111111" },
+    { "key": "accessToken", "value": "" },
+    { "key": "taskId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Mint test token (free user)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('accessToken', body.accessToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{freeUserId}}\",\n  \"email\": \"free-user@linksphere.dev\",\n  \"subscriptionTier\": \"FREE\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/v1/auth/token", "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "token"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Payments",
+      "item": [
+        {
+          "name": "Webhook - Balance Credit (valid signature)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const payload = {",
+                  "  eventId: 'evt_' + Date.now(),",
+                  "  provider: 'stripe',",
+                  "  type: 'BALANCE_CREDIT',",
+                  "  userId: pm.collectionVariables.get('freeUserId'),",
+                  "  amountCents: 1500",
+                  "};",
+                  "const raw = JSON.stringify(payload);",
+                  "const secret = pm.collectionVariables.get('webhookSecret');",
+                  "const signature = CryptoJS.HmacSHA256(raw, secret).toString(CryptoJS.enc.Hex);",
+                  "pm.collectionVariables.set('__webhookRawBody', raw);",
+                  "pm.request.body.update(raw);",
+                  "pm.request.headers.upsert({ key: 'X-Webhook-Signature', value: signature });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}" },
+            "url": { "raw": "{{baseUrl}}/api/v1/payments/webhook", "host": ["{{baseUrl}}"], "path": ["api", "v1", "payments", "webhook"] },
+            "description": "Signature is computed in the Pre-request Script over the exact raw body, matching how the server verifies it."
+          }
+        },
+        {
+          "name": "Webhook - Invalid signature (expect 401)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Webhook-Signature", "value": "0000000000000000000000000000000000000000000000000000000000000000" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventId\": \"evt_invalid_demo\",\n  \"provider\": \"stripe\",\n  \"type\": \"BALANCE_CREDIT\",\n  \"userId\": \"{{freeUserId}}\",\n  \"amountCents\": 1500\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/v1/payments/webhook", "host": ["{{baseUrl}}"], "path": ["api", "v1", "payments", "webhook"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Streams",
+      "item": [
+        {
+          "name": "GET active streams",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/streams/active", "host": ["{{baseUrl}}"], "path": ["api", "v1", "streams", "active"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Media",
+      "item": [
+        {
+          "name": "Upload media task",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('taskId', body.taskId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"videoUrl\": \"https://cdn.example.com/videos/clip.mp4\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/v1/media/upload-task", "host": ["{{baseUrl}}"], "path": ["api", "v1", "media", "upload-task"] }
+          }
+        },
+        {
+          "name": "Get media task status",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/media/tasks/{{taskId}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "media", "tasks", "{{taskId}}"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "GET health",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/v1/health", "host": ["{{baseUrl}}"], "path": ["api", "v1", "health"] }
+          }
+        }
+      ]
+    }
+  ]
+}
